@@ -1549,35 +1549,51 @@ string System::CalculateCheckSum(string filename, int type) {
 }
 
 // 프레임간 odom: T_{k-1 <- k} 를 순서대로 넣어주는 함수
-void System::GetOdomMotions(std::vector<Sophus::SE3f> &vT_rel_out) {
+// + 각 프레임 timestamp, valid 여부도 같이 뽑는 버전 예시
+void System::GetOdomMotions(std::vector<Sophus::SE3f> &vT_rel_out,
+                            std::vector<double> &vTimestamps,
+                            std::vector<bool> &vValid) {
   vT_rel_out.clear();
+  vTimestamps.clear();
+  vValid.clear();
 
   if (mSensor == MONOCULAR)
     return;
 
-  // 1. 기존 SaveTrajectoryKITTI처럼 KF 정렬 & Tow 계산
   vector<KeyFrame *> vpKFs = mpAtlas->GetAllKeyFrames();
   sort(vpKFs.begin(), vpKFs.end(), KeyFrame::lId);
 
   Sophus::SE3f Tow = vpKFs[0]->GetPoseInverse();
 
-  list<ORB_SLAM3::KeyFrame *>::iterator lRit = mpTracker->mlpReferences.begin();
-  list<double>::iterator lT = mpTracker->mlFrameTimes.begin();
+  auto lRit = mpTracker->mlpReferences.begin();
+  auto lT = mpTracker->mlFrameTimes.begin();
+  auto lbL = mpTracker->mlbLost.begin();
 
-  Sophus::SE3f Twc_prev; // 이전 프레임 절대 포즈
+  Sophus::SE3f Twc_prev;
+  double t_prev = 0.0;
   bool has_prev = false;
 
-  for (list<Sophus::SE3f>::iterator
-           lit = mpTracker->mlRelativeFramePoses.begin(),
-           lend = mpTracker->mlRelativeFramePoses.end();
-       lit != lend; lit++, lRit++, lT++) {
-    ORB_SLAM3::KeyFrame *pKF = *lRit;
+  for (auto lit = mpTracker->mlRelativeFramePoses.begin(),
+            lend = mpTracker->mlRelativeFramePoses.end();
+       lit != lend; ++lit, ++lRit, ++lT, ++lbL) {
+    double t = *lT;
+    bool lost = *lbL; // 이 프레임에서 tracking 실패 여부
 
+    // timestamp / valid 플래그는 프레임 단위로 저장
+    vTimestamps.push_back(t);
+    vValid.push_back(!lost);
+
+    if (lost) {
+      // 이 프레임은 VO 못한 상태이므로, odom 연속성 끊어줌
+      has_prev = false;
+      continue;
+    }
+
+    KeyFrame *pKF = *lRit;
     if (!pKF)
       continue;
 
-    Sophus::SE3f Trw; // KF→world
-
+    Sophus::SE3f Trw; // KF -> world
     while (pKF->isBad()) {
       Trw = Trw * pKF->mTcp;
       pKF = pKF->GetParent();
@@ -1589,14 +1605,14 @@ void System::GetOdomMotions(std::vector<Sophus::SE3f> &vT_rel_out) {
     Sophus::SE3f Twc = Tcw.inverse(); // 이 프레임의 절대 포즈
 
     if (has_prev) {
-      // 우리가 쓰는 정의: T_{k-1 <- k} = Twc_prev^{-1} * Twc
+      // T_{k-1 <- k} = Twc_prev^{-1} * Twc
       Sophus::SE3f T_rel = Twc_prev.inverse() * Twc;
       vT_rel_out.push_back(T_rel);
-    } else {
-      has_prev = true; // 첫 프레임은 이전이 없으므로 odom 안 쌓음
     }
 
     Twc_prev = Twc;
+    t_prev = t;
+    has_prev = true;
   }
 }
 
