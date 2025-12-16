@@ -193,7 +193,8 @@ public:
   float GetImageScale();
 
   // Custom
-  void GetOdomMotions(std::vector<Sophus::SE3f> &vT_rel_out,
+  void GetOdomMotions(std::vector<Sophus::SE3f> &poses,
+                      std::vector<Sophus::SE3f> &vT_rel_out,
                       std::vector<double> &vTimestamps,
                       std::vector<bool> &vValid);
 

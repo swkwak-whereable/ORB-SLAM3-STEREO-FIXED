@@ -1550,7 +1550,8 @@ string System::CalculateCheckSum(string filename, int type) {
 
 // 프레임간 odom: T_{k-1 <- k} 를 순서대로 넣어주는 함수
 // + 각 프레임 timestamp, valid 여부도 같이 뽑는 버전 예시
-void System::GetOdomMotions(std::vector<Sophus::SE3f> &vT_rel_out,
+void System::GetOdomMotions(std::vector<Sophus::SE3f> &poses,
+                            std::vector<Sophus::SE3f> &vT_rel_out,
                             std::vector<double> &vTimestamps,
                             std::vector<bool> &vValid) {
   vT_rel_out.clear();
@@ -1604,6 +1605,7 @@ void System::GetOdomMotions(std::vector<Sophus::SE3f> &vT_rel_out,
     Sophus::SE3f Tcw = (*lit) * Trw;
     Sophus::SE3f Twc = Tcw.inverse(); // 이 프레임의 절대 포즈
 
+    poses.push_back(Twc);
     if (has_prev) {
       // T_{k-1 <- k} = Twc_prev^{-1} * Twc
       Sophus::SE3f T_rel = Twc_prev.inverse() * Twc;
